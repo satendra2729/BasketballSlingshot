@@ -79,7 +79,7 @@
        const basketballImage = new Image();
        basketballImage.src = 'basketball.png'; // Make sure this path is correct
        const basketRingImage = new Image();
-       basketRingImage.src = 'basketring.png'; // Make sure this path is correct
+       basketRingImage.src = 'basketring.gif'; // Make sure this path is correct
 
 
        let imagesLoaded = 0;
@@ -99,7 +99,7 @@
        basketballImage.onload = imageLoaded;
        basketRingImage.onload = imageLoaded;
        basketballImage.onerror = () => { console.error('Failed to load basketball.png'); imageLoaded(); };
-       basketRingImage.onerror = () => { console.error('Failed to load basketring.png'); imageLoaded(); };
+       basketRingImage.onerror = () => { console.error('Failed to load basketring.gif'); imageLoaded(); };
 
 
        // Disable start button until images are loaded
@@ -609,4 +609,5 @@ drawFront() {
 
    </script>
 </body>
+
 </html>
