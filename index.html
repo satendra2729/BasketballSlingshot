@@ -1,0 +1,612 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+   <meta charset="UTF-8">
+   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+   <title>Sling Shot Basketball</title>
+   <script src="https://cdn.tailwindcss.com"></script>
+   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap" rel="stylesheet">
+   <style>
+       body {
+           font-family: 'Poppins', sans-serif;
+           touch-action: none; /* Prevents scrolling on touch devices */
+       }
+       canvas {
+           background-color: #1a202c; /* A dark slate color */
+           border-radius: 0.5rem;
+           cursor: grab;
+       }
+       canvas:active {
+           cursor: grabbing;
+       }
+   </style>
+</head>
+<body class="bg-gray-900 text-white flex flex-col items-center justify-center min-h-screen p-4">
+
+
+   <div id="startScreen" class="text-center space-y-6">
+       <h1 class="text-5xl font-bold text-orange-400">Sling Shot Basketball</h1>
+       <p class="text-lg text-gray-300">Pull the ball and release to shoot. Can you beat all the levels?</p>
+       <button id="startButton" class="bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 px-8 rounded-lg text-xl transition duration-300 transform hover:scale-105">
+           Start Game
+       </button>
+   </div>
+
+
+   <div id="gameContainer" class="hidden w-full max-w-4xl mx-auto flex flex-col items-center">
+       <div class="w-full flex justify-between items-center mb-4 px-2">
+           <h2 class="text-2xl font-bold">Level: <span id="levelDisplay">1</span></h2>
+           <button id="resetButton" class="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg transition duration-300">Start Over</button>
+       </div>
+      
+       <canvas id="gameCanvas"></canvas>
+
+
+       <div id="messageDisplay" class="mt-4 text-xl font-semibold h-8 text-green-400"></div>
+   </div>
+
+
+   <script>
+       // --- DOM Elements ---
+       const startScreen = document.getElementById('startScreen');
+       const gameContainer = document.getElementById('gameContainer');
+       const startButton = document.getElementById('startButton');
+       const resetButton = document.getElementById('resetButton');
+       const canvas = document.getElementById('gameCanvas');
+       const levelDisplay = document.getElementById('levelDisplay');
+       const messageDisplay = document.getElementById('messageDisplay');
+       const ctx = canvas.getContext('2d');
+
+
+       // --- Game Configuration & State ---
+       let canvasWidth, canvasHeight;
+       let ball, basket;
+       let isDragging = false;
+       let dragStart = { x: 0, y: 0 };
+       let dragEnd = { x: 0, y: 0 };
+       let gameState = 'ready'; // ready, dragging, in_air, scored
+       let currentLevel = 1;
+
+
+       const physics = {
+           gravity: 0.3,
+           bounce: 0.7, // Energy retained on bounce
+           friction: 0.99 // Air resistance
+       };
+
+
+       // --- Image Loading ---
+       const basketballImage = new Image();
+       basketballImage.src = 'basketball.png'; // Make sure this path is correct
+       const basketRingImage = new Image();
+       basketRingImage.src = 'basketring.png'; // Make sure this path is correct
+
+
+       let imagesLoaded = 0;
+       const totalImages = 2;
+
+
+       function imageLoaded() {
+           imagesLoaded++;
+           if (imagesLoaded === totalImages) {
+               // All images are loaded, now we can start the game setup
+               startButton.disabled = false;
+               startButton.textContent = 'Start Game';
+           }
+       }
+
+
+       basketballImage.onload = imageLoaded;
+       basketRingImage.onload = imageLoaded;
+       basketballImage.onerror = () => { console.error('Failed to load basketball.png'); imageLoaded(); };
+       basketRingImage.onerror = () => { console.error('Failed to load basketring.png'); imageLoaded(); };
+
+
+       // Disable start button until images are loaded
+       startButton.disabled = true;
+       startButton.textContent = 'Loading Assets...';
+
+
+
+
+       // --- Level Data ---
+       // Defines the basket's position and movement for each level
+       const levels = [
+           { x: 0.85, y: 0.60 }, // Level 1
+           { x: 0.80, y: 0.40 }, // Level 2
+           { x: 0.70, y: 0.70 }, // Level 3
+           { x: 0.90, y: 0.30 }, // Level 4
+           { x: 0.75, y: 0.50 }, // Level 5
+           { x: 0.65, y: 0.35 }, // Level 6
+           { x: 0.88, y: 0.80 }, // Level 7
+           { x: 0.60, y: 0.60 }, // Level 8
+           { x: 0.80, y: 0.50, move: 'vertical', speed: 1.5, range: 150 },   // Level 9
+           { x: 0.75, y: 0.40, move: 'horizontal', speed: 2, range: 100 }, // Level 10
+           { x: 0.85, y: 0.60, move: 'vertical', speed: 2.5, range: 200 },  // Level 11
+           { x: 0.70, y: 0.30, move: 'horizontal', speed: -2.5, range: 120}, // Level 12 (moves left)
+       ];
+
+
+       // --- Game Object Classes ---
+       class Ball {
+           constructor(x, y, radius) {
+               this.x = x;
+               this.y = y;
+               this.startX = x;
+               this.startY = y;
+               this.radius = radius;
+               this.vx = 0;
+               this.vy = 0;
+               this.lastY = y; // To track previous position for scoring
+           }
+
+
+           draw() {
+               if (basketballImage.complete && basketballImage.naturalWidth > 0) {
+                   // Draw the image centered on the ball's coordinates
+                   // Ensure width and height are equal to maintain circular shape
+                   ctx.drawImage(basketballImage, this.x - this.radius, this.y - this.radius, this.radius * 5, this.radius * 4);
+               } else {
+                   // Fallback to drawing a circle if image isn't loaded
+                   ctx.beginPath();
+                   ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                   ctx.fillStyle = '#FDB813'; // Basketball orange
+                   ctx.fill();
+                   ctx.closePath();
+               }
+           }
+
+
+           update() {
+               if (gameState !== 'in_air') return;
+              
+               // Store previous position for robust collision detection
+               this.lastY = this.y;
+
+
+               this.vy += physics.gravity;
+               this.vx *= physics.friction;
+               this.vy *= physics.friction;
+               this.x += this.vx;
+               this.y += this.vy;
+
+
+               // Wall collision detection
+               if (this.x + this.radius > canvasWidth) {
+                   this.x = canvasWidth - this.radius;
+                   this.vx *= -physics.bounce;
+               } else if (this.x - this.radius < 0) {
+                   this.x = this.radius;
+                   this.vx *= -physics.bounce;
+               }
+               if (this.y + this.radius > canvasHeight) {
+                   this.y = canvasHeight - this.radius;
+                   this.vy *= -physics.bounce;
+                   // If ball settles on the floor, reset the shot
+                   if (Math.abs(this.vy) < 1) {
+                        setTimeout(resetShot, 500);
+                   }
+               }
+           }
+          
+           reset() {
+               this.x = this.startX;
+               this.y = this.startY;
+               this.vx = 0;
+               this.vy = 0;
+               this.lastY = this.startY;
+           }
+       }
+
+
+       class Basket {
+           constructor(x, y) {
+               this.x = x;
+               this.y = y;
+               this.baseY = y; // For movement
+               this.baseX = x; // For movement
+               this.width = 100; // Visual width of the hoop/ring
+               this.height = 150; // This is the rim line height for scoring, not visible
+               this.backboardHeight = 80;
+               this.rimThickness = 6; // For collision, not visual
+               this.netHeight = 50; // How far the net hangs
+
+
+               // Collision objects
+               this.backboard = { x: this.x + this.width, y: this.y - this.backboardHeight, width: 10, height: this.backboardHeight + this.height };
+               // The frontRim and backRim now define collision points for the imagethis.y + this.ringImageHeight
+               // Adjusted to align with the visual appearance of the ring image
+               this.frontRim = { x: this.x, y: this.y + this.rimThickness / 2, radius: this.rimThickness };
+               this.backRim = { x: this.x + this.width, y: this.y + this.rimThickness / 2, radius: this.rimThickness };
+               this.scoreZone = { x: this.x + this.rimThickness, y: this.y + this.rimThickness, width: this.width - this.rimThickness*2, height: 10 }; // Line for score detection
+
+
+               // Movement properties
+               this.move = null;
+               this.speed = 0;
+               this.range = 0;
+               this.direction = 1;
+
+
+               // Image dimensions for the ring - Adjusted these for better fit
+               this.ringImageWidth = 120;
+               this.ringImageHeight = 120; // Increased height to match the skeleton
+           }
+
+
+           drawBack() {
+               // Backboard (still drawn as a rectangle)
+               // ctx.fillStyle = '#E5E7EB'; // Light gray
+               // ctx.fillRect(this.backboard.x, this.backboard.y, this.backboard.width, this.backboard.height);
+
+
+               // Net (still drawn as lines behind the ring image, adjusted starting point)
+               // ctx.strokeStyle = '#FFFFFF';
+               // ctx.lineWidth = 2;
+               // Draw lines from the *bottom* of the ring image's perceived position
+               // const netStartY = this.y + this.rimThickness / 2 + (this.ringImageHeight / 2); // Approximate bottom of the ring visual
+               // for (let i = 0; i < 6; i++) {
+               //     ctx.beginPath();
+               //     ctx.moveTo(this.x + i * (this.width/5), netStartY);
+               //     ctx.lineTo(this.x + this.width / 2, netStartY + this.netHeight);
+               //     ctx.stroke();
+               // }
+           }
+drawFront() {
+               // Draw Basket Ring Image
+               if (basketRingImage.complete && basketRingImage.naturalWidth > 0) {
+                   // Position the image: basket.x is the left edge of the ring,
+                   // basket.y is the top edge. Adjust Y to center vertically on the backboard's rim line.
+                   ctx.drawImage(basketRingImage,
+                                 this.x,
+                                 this.y - (this.ringImageHeight / 2) + (this.height / 2),
+                                 this.ringImageWidth,
+                                 this.ringImageHeight);
+               } else {
+                   // Fallback to drawing a red rim if image isn't loaded
+                   ctx.fillStyle = '#EF4444'; // Red
+                   ctx.beginPath();
+                   ctx.arc(this.frontRim.x, this.frontRim.y, this.frontRim.radius, 0, Math.PI * 2);
+                   ctx.fill();
+                   ctx.beginPath();
+                   ctx.arc(this.backRim.x, this.backRim.y, this.backRim.radius, 0, Math.PI * 2);
+                   ctx.fill();
+               }
+           }
+
+
+           draw() {
+               // Backboard (still drawn as a rectangle)
+               ctx.fillStyle = '#E5E7EB'; // Light gray
+               ctx.fillRect(this.backboard.x, this.backboard.y, this.backboard.width, this.backboard.height);
+
+
+               // Draw Basket Ring Image
+               if (basketRingImage.complete && basketRingImage.naturalWidth > 0) {
+                   // Position the image: basket.x is the left edge of the ring,
+                   // basket.y is the top edge. Adjust Y to center vertically on the backboard's rim line.
+                   ctx.drawImage(basketRingImage,
+                                 this.x,
+                                 this.y - (this.ringImageHeight / 10) + (this.height / 5),
+                                 this.ringImageWidth,
+                                 this.ringImageHeight);
+               } else {
+                   // Fallback to drawing a red rim if image isn't loaded
+                   ctx.fillStyle = '#EF4444'; // Red
+                   ctx.beginPath();
+                   ctx.arc(this.frontRim.x, this.frontRim.y, this.frontRim.radius, 0, Math.PI * 2);
+                   ctx.fill();
+                   ctx.beginPath();
+                   ctx.arc(this.backRim.x, this.backRim.y, this.backRim.radius, 0, Math.PI * 2);
+                   ctx.fill();
+               }
+
+
+               // Net (still drawn as lines behind the ring image, adjusted starting point)
+               ctx.strokeStyle = '#FFFFFF';
+               ctx.lineWidth = null;
+               // Draw lines from the *bottom* of the ring image's perceived position
+               const netStartY = this.y + this.rimThickness / 2 + (this.ringImageHeight / 6); // Approximate bottom of the ring visual
+               for (let i = 0; i < 6; i++) {
+                   ctx.beginPath();
+                   ctx.moveTo(this.x + i * (this.width/5), netStartY);
+                   ctx.lineTo(this.x + this.width / 2, netStartY + this.netHeight);
+                   ctx.stroke();
+               }
+           }
+          
+           update() {
+               if (this.move === 'vertical') {
+                   this.y += this.speed * this.direction;
+                   if (Math.abs(this.y - this.baseY) > this.range / 2) {
+                       this.direction *= -1;
+                   }
+               } else if (this.move === 'horizontal') {
+                    this.x += this.speed * this.direction;
+                   if (Math.abs(this.x - this.baseX) > this.range / 2) {
+                       this.direction *= -1;
+                   }
+               }
+
+
+               // Update collision object positions
+               this.backboard.x = this.x + this.width;
+               this.backboard.y = this.y - this.backboardHeight;
+               // These are for collision detection, they should align with the drawn image
+               this.frontRim.x = this.x;
+               this.frontRim.y = this.y + (this.ringImageHeight / 2); // Collision point adjusted to vertical center of image
+               this.backRim.x = this.x + this.width;
+               this.backRim.y = this.y + (this.ringImageHeight / 2); // Collision point adjusted
+               this.scoreZone.x = this.x + this.rimThickness;
+               this.scoreZone.y = this.y + (this.ringImageHeight / 2) + this.rimThickness; // Score line just below the visible rim
+           }
+       }
+
+
+       // --- Game Setup ---
+       function init() {
+           // Set canvas size based on container
+           const containerRect = gameContainer.getBoundingClientRect();
+           canvasWidth = containerRect.width;
+           canvasHeight = Math.min(500, window.innerHeight * 0.7);
+           canvas.width = canvasWidth;
+           canvas.height = canvasHeight;
+
+
+           const ballRadius = Math.max(12, canvasWidth * 0.015);
+           const ballInitialX = ballRadius * 3;
+           const ballInitialY = canvasHeight - ballRadius * 3;
+           ball = new Ball(ballInitialX, ballInitialY, ballRadius);
+          
+           setupLevel(currentLevel);
+
+
+           // Only start the game loop after images are confirmed loaded
+           if (imagesLoaded === totalImages) {
+               gameLoop();
+           } else {
+               console.log("Images not yet loaded, waiting for onload.");
+           }
+       }
+
+
+       function setupLevel(level) {
+           levelDisplay.innerText = level;
+           const levelIndex = Math.min(level - 1, levels.length - 1); // Use last level data if we exceed defined levels
+           const levelData = levels[levelIndex];
+
+
+           const basketX = canvasWidth * levelData.x;
+           const basketY = canvasHeight * levelData.y;
+           basket = new Basket(basketX, basketY);
+          
+           if(levelData.move) {
+               basket.move = levelData.move;
+               basket.speed = levelData.speed;
+               basket.range = levelData.range;
+           }
+
+
+           resetShot();
+       }
+
+
+       function resetShot() {
+           ball.reset();
+           gameState = 'ready';
+           messageDisplay.textContent = 'Pull and release to shoot!';
+       }
+
+
+       function startGame() {
+           startScreen.classList.add('hidden');
+           gameContainer.classList.remove('hidden');
+           currentLevel = 1;
+           init();
+           window.addEventListener('resize', init);
+       }
+
+
+       function resetGame() {
+           currentLevel = 1;
+           setupLevel(currentLevel);
+       }
+
+
+       // --- Event Handlers ---
+       function getMousePos(evt) {
+           const rect = canvas.getBoundingClientRect();
+           const scaleX = canvas.width / rect.width;
+           const scaleY = canvas.height / rect.height;
+           const clientX = evt.clientX || (evt.touches && evt.touches[0].clientX);
+           const clientY = evt.clientY || (evt.touches && evt.touches[0].clientY);
+           return {
+               x: (clientX - rect.left) * scaleX,
+               y: (clientY - rect.top) * scaleY
+           };
+       }
+      
+       function handleStart(evt) {
+           if (gameState !== 'ready') return;
+           isDragging = true;
+           dragStart = getMousePos(evt);
+           canvas.style.cursor = 'grabbing';
+           gameState = 'dragging';
+       }
+      
+       function handleMove(evt) {
+           if (!isDragging) return;
+           dragEnd = getMousePos(evt);
+       }
+
+
+       function handleEnd() {
+           if (!isDragging || gameState !== 'dragging') return;
+           isDragging = false;
+           canvas.style.cursor = 'grab';
+           gameState = 'in_air';
+           messageDisplay.textContent = '';
+
+
+           const dx = dragStart.x - dragEnd.x;
+           const dy = dragStart.y - dragEnd.y;
+          
+           // Apply force based on pull distance, with a max cap
+           const forceMultiplier = 0.2;
+           const maxForce = 25;
+           ball.vx = Math.min(dx * forceMultiplier, maxForce);
+           ball.vy = Math.min(dy * forceMultiplier, maxForce);
+       }
+      
+       // --- Collision Detection ---
+       function checkCollisions() {
+           if (gameState !== 'in_air') return;
+
+
+           // Rim collisions (circle collision with the image's effective rim points)
+           // Assuming frontRim and backRim are still circular collision points
+           [basket.frontRim, basket.backRim].forEach(rim => {
+               const dx = ball.x - rim.x;
+               const dy = ball.y - rim.y;
+               const distance = Math.sqrt(dx * dx + dy * dy);
+               if (distance < ball.radius + rim.radius) {
+                   ball.vx *= -physics.bounce * 0.8;
+                   ball.vy *= -physics.bounce;
+               }
+           });
+
+
+           // Backboard collision (rectangle collision)
+           if (ball.x + ball.radius > basket.backboard.x &&
+               ball.x - ball.radius < basket.backboard.x + basket.backboard.width &&
+               ball.y > basket.backboard.y &&
+               ball.y < basket.backboard.y + basket.backboard.height) {
+               ball.x = basket.backboard.x - ball.radius;
+               ball.vx *= -physics.bounce;
+           }
+
+
+           // Score detection
+           // Use a line-crossing algorithm to prevent the ball from "tunneling" through the hoop at high speeds.
+           // This checks if the ball was above the hoop in the last frame and is at or below it in the current frame.
+           if (ball.lastY < basket.scoreZone.y &&
+               ball.y >= basket.scoreZone.y &&
+               ball.x > basket.scoreZone.x &&
+               ball.x < basket.scoreZone.x + basket.scoreZone.width)
+           {
+               handleScore();
+           }
+       }
+      
+       function handleScore() {
+           gameState = 'scored';
+           messageDisplay.textContent = 'Nice Shot!';
+           ball.vx = 0;
+           ball.vy = 0;
+          
+           setTimeout(() => {
+               currentLevel++;
+               // Add more levels dynamically if needed
+               if (currentLevel > levels.length && levels.length < 20) {
+                    const lastLevel = levels[levels.length - 1];
+                    levels.push({
+                        x: Math.random() * 0.3 + 0.6, // 0.6 to 0.9
+                        y: Math.random() * 0.5 + 0.3, // 0.3 to 0.8
+                        move: Math.random() > 0.5 ? 'vertical' : 'horizontal',
+                        speed: lastLevel.speed * 1.05,
+                        range: lastLevel.range * 1.1
+                    });
+               }
+               setupLevel(currentLevel);
+           }, 1500);
+       }
+
+
+       // --- Drawing & Game Loop ---
+       function drawTrajectory() {
+           if (!isDragging) return;
+           const dx = dragStart.x - dragEnd.x;
+           const dy = dragStart.y - dragEnd.y;
+
+
+           // Use the same force calculation as the actual shot for accuracy
+           const forceMultiplier = 0.2;
+           const maxForce = 25;
+           let tempVx = Math.min(dx * forceMultiplier, maxForce);
+           let tempVy = Math.min(dy * forceMultiplier, maxForce);
+
+
+           let tempX = ball.x;
+           let tempY = ball.y;
+
+
+           ctx.beginPath();
+           ctx.moveTo(tempX, tempY);
+           ctx.setLineDash([5, 10]);
+           ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+           ctx.lineWidth = null;
+
+
+           for (let i = 0; i < 60; i++) {
+               tempVy += physics.gravity;
+               // Apply friction to match the ball's actual movement
+               tempVx *= physics.friction;
+               tempVy *= physics.friction;
+               tempX += tempVx;
+               tempY += tempVy;
+               ctx.lineTo(tempX, tempY);
+           }
+           ctx.stroke();
+           ctx.setLineDash([]);
+       }
+
+
+       function gameLoop() {
+           ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+
+
+           basket.update();
+           ball.update();
+           checkCollisions();
+
+
+           // 1. Draw backboard and net
+           basket.drawBack();
+          
+           // 2. Draw the ball
+           ball.draw();
+
+
+           // 3. Draw the front rim (on top of the ball)
+           basket.drawFront();
+
+
+           if(gameState === 'dragging') {
+               drawTrajectory();
+           }
+
+
+           requestAnimationFrame(gameLoop);
+       }
+
+
+
+
+       // --- Event Listeners ---
+       startButton.addEventListener('click', startGame);
+       resetButton.addEventListener('click', resetGame);
+
+
+       canvas.addEventListener('mousedown', handleStart);
+       canvas.addEventListener('mousemove', handleMove);
+       window.addEventListener('mouseup', handleEnd); // Use window to catch mouseup outside canvas
+
+
+       canvas.addEventListener('touchstart', handleStart);
+       canvas.addEventListener('touchmove', handleMove);
+       window.addEventListener('touchend', handleEnd);
+
+
+   </script>
+</body>
+</html>
