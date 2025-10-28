@@ -1,0 +1,36 @@
+﻿🏀 How This Web App Was Built
+This is a single-file, client-side game application. The entire app—structure, styling, game physics, and level data—is contained within one HTML file and runs entirely in the user's web browser, requiring no backend.
+* Structure (HTML): The HTML is very simple, consisting of two main "screens":
+   * An initial "start screen" (#startScreen) with the game title and a start button.
+   * A "game container" (#gameContainer) that holds the level display, a reset button, and the HTML5 <canvas> element where the game is rendered. The app switches between these screens by adding or removing the hidden CSS class.
+* Styling (CSS): The app's visual design is built using two methods:
+   * Tailwind CSS: The primary styling for layout, buttons, and text is done with the Tailwind CSS framework, which is loaded from an external CDN (Content Delivery Network).
+   * Custom CSS: A small <style> block is used to set the Poppins font, define the canvas background color, and change the mouse cursor to grab and grabbing for a better drag-and-drop feel.
+* Logic (JavaScript): The entire game is written in vanilla JavaScript inside a single <script> tag.
+   * Rendering: The game is rendered dynamically onto an HTML5 Canvas. The ball, basket, and trajectory line are not HTML elements but are drawn onto the canvas in each frame of the game loop.
+   * External Assets: The game loads two images (basketball.png and basketring.png) to draw the ball and the hoop. The "Start Game" button is disabled until these images are successfully loaded. If the images fail, the game has fallback code to draw the ball and rim as simple colored shapes.
+   * State Management: The game's state is managed by JavaScript variables like gameState (which tracks 'ready', 'dragging', 'in_air', 'scored'), currentLevel, isDragging, and objects for the ball and basket.
+   * Game Loop: The game runs on a continuous gameLoop function, which is called by requestAnimationFrame. In each frame, the loop clears the canvas, updates the positions of the ball and basket, checks for collisions, and redraws everything.
+   * Physics Engine: It includes a simple 2D physics engine that simulates:
+      * Gravity: physics.gravity constantly pulls the ball down.
+      * Bounce: physics.bounce determines how much energy is retained after hitting a surface.
+      * Friction: physics.friction (air resistance) gradually slows the ball's velocity.
+   * Slingshot Mechanic: The game calculates the ball's launch velocity based on the distance and direction the user drags and releases the mouse or their finger. It also draws a dotted trajectory line while dragging.
+   * Level Design: The game includes a levels array that defines the position (and later, movement) of the basket for each level. The game can dynamically generate new, harder levels if the player beats all the predefined ones.
+________________
+
+
+🖥️ Running Environment & Specifications
+* Software: This app is designed to run in any modern web browser (like Chrome, Firefox, Safari, or Edge) that supports the HTML5 Canvas API and modern JavaScript (ES6+).
+* Hardware: The application is very lightweight. The physics calculations and canvas drawing are simple and not computationally demanding. It will run smoothly on virtually any modern device, including:
+   * Desktop computers
+   * Laptops
+   * Tablets
+   * Smartphones (It includes touch event listeners for mobile play)
+* Network:
+   * Client-Side Only: The game logic is 100% client-side. It does not need an internet connection to play.
+   * First-Time Load: An internet connection is required for the initial load of the page. This is necessary to download:
+      1. The Tailwind CSS file.
+      2. The "Poppins" web font.
+      3. The two game images (basketball.png, basketring.png).
+   * Offline Use: After these external files have been loaded once, they will be stored in the browser's cache. The game can then be loaded and played completely offline.
